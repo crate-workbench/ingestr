@@ -650,7 +650,7 @@ def autocreate_db_for_clickhouse():
     patcher.stop()
 
 
-def get_uri_read(image: DockerImage) -> Optional[str]:
+def get_uri_read(url: str, image: DockerImage) -> str:
     """
     Some databases need different URLs (destination vs. reading back).
 
@@ -664,14 +664,12 @@ def get_uri_read(image: DockerImage) -> Optional[str]:
 
     C'est la vie. ¯\\_(ツ)_/¯
     """
-    if not hasattr(image, "container") or not image.container:
-        raise RuntimeError(
-            "Testcontainer not available but needed to retrieve URL from"
-        )
-    url = image.container.get_connection_url()
-    if url.startswith("crate"):
+    uri = URL(url)
+    if uri.scheme == "cratedb":
+        if image.container is None:
+            raise RuntimeError("Needs a container to determine exposed port")
         port4200 = int(image.container.get_exposed_port(4200))
-        uri = URL(url).with_scheme("crate").with_port(port4200)
+        uri = uri.with_scheme("crate").with_port(port4200)
         return str(uri)
     return url
 
@@ -681,12 +679,19 @@ def get_uri_read(image: DockerImage) -> Optional[str]:
 )
 @pytest.mark.parametrize("source", list(SOURCES.values()), ids=list(SOURCES.keys()))
 def test_create_replace(source, dest):
+    if isinstance(source.container, SqlServerContainer) and isinstance(
+        dest, CrateDbDockerImage
+    ):
+        pytest.skip(
+            "CrateDB type mapping does not support `DATE` yet, "
+            "see https://github.com/crate-workbench/ingestr/issues/4"
+        )
     with ThreadPoolExecutor() as executor:
         source_future = executor.submit(source.start)
         dest_future = executor.submit(dest.start)
         source_uri = source_future.result()
         dest_uri = dest_future.result()
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     db_to_db_create_replace(source_uri, dest_uri, dest_uri_read)
     source.stop()
     dest.stop()
@@ -697,12 +702,17 @@ def test_create_replace(source, dest):
 )
 @pytest.mark.parametrize("source", list(SOURCES.values()), ids=list(SOURCES.keys()))
 def test_append(source, dest):
+    if isinstance(dest, CrateDbDockerImage):
+        pytest.skip(
+            "CrateDB support for 'append' strategy pending, "
+            "see https://github.com/crate-workbench/ingestr/issues/6"
+        )
     with ThreadPoolExecutor() as executor:
         source_future = executor.submit(source.start)
         dest_future = executor.submit(dest.start)
         source_uri = source_future.result()
         dest_uri = dest_future.result()
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     db_to_db_append(source_uri, dest_uri, dest_uri_read)
     source.stop()
     dest.stop()
@@ -713,17 +723,17 @@ def test_append(source, dest):
 )
 @pytest.mark.parametrize("source", list(SOURCES.values()), ids=list(SOURCES.keys()))
 def test_merge_with_primary_key(source, dest):
+    if isinstance(dest, CrateDbDockerImage):
+        pytest.skip(
+            "CrateDB support for 'merge' strategy pending, "
+            "see https://github.com/crate/dlt-cratedb/issues/14"
+        )
     with ThreadPoolExecutor() as executor:
         source_future = executor.submit(source.start)
         dest_future = executor.submit(dest.start)
         source_uri = source_future.result()
         dest_uri = dest_future.result()
-    if dest_uri.startswith("cratedb://"):
-        pytest.skip(
-            "CrateDB currently fails when selecting the 'merge' strategy, "
-            "see https://github.com/crate/dlt-cratedb/issues/14"
-        )
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     db_to_db_merge_with_primary_key(source_uri, dest_uri, dest_uri_read)
     source.stop()
     dest.stop()
@@ -734,17 +744,17 @@ def test_merge_with_primary_key(source, dest):
 )
 @pytest.mark.parametrize("source", list(SOURCES.values()), ids=list(SOURCES.keys()))
 def test_delete_insert_without_primary_key(source, dest):
+    if isinstance(dest, CrateDbDockerImage):
+        pytest.skip(
+            "CrateDB support for 'delete+insert' strategy pending, "
+            "see https://github.com/crate/dlt-cratedb/issues/14"
+        )
     with ThreadPoolExecutor() as executor:
         source_future = executor.submit(source.start)
         dest_future = executor.submit(dest.start)
         source_uri = source_future.result()
         dest_uri = dest_future.result()
-    if dest_uri.startswith("cratedb://"):
-        raise pytest.skip(
-            "CrateDB currently fails when selecting the 'delete+insert' strategy, "
-            "see https://github.com/crate/dlt-cratedb/issues/14"
-        )
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     db_to_db_delete_insert_without_primary_key(source_uri, dest_uri, dest_uri_read)
     source.stop()
     dest.stop()
@@ -755,17 +765,17 @@ def test_delete_insert_without_primary_key(source, dest):
 )
 @pytest.mark.parametrize("source", list(SOURCES.values()), ids=list(SOURCES.keys()))
 def test_delete_insert_with_time_range(source, dest):
+    if isinstance(dest, CrateDbDockerImage):
+        pytest.skip(
+            "CrateDB support for 'delete+insert' strategy pending, "
+            "see https://github.com/crate/dlt-cratedb/issues/14"
+        )
     with ThreadPoolExecutor() as executor:
         source_future = executor.submit(source.start)
         dest_future = executor.submit(dest.start)
         source_uri = source_future.result()
         dest_uri = dest_future.result()
-    if dest_uri.startswith("cratedb://"):
-        raise pytest.skip(
-            "CrateDB currently fails when selecting the 'delete+insert' strategy, "
-            "see https://github.com/crate/dlt-cratedb/issues/14"
-        )
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     db_to_db_delete_insert_with_timerange(source_uri, dest_uri, dest_uri_read)
     source.stop()
     dest.stop()
@@ -901,7 +911,7 @@ def db_to_db_append(
         assert (2, "val2", 1641081600000) in res
     else:
         assert res[0] == (1, "val1", as_datetime("2022-01-01"))
-        assert res[1] == (2, "val2", as_datetime("2022-02-01"))
+        assert res[1] == (2, "val2", as_datetime("2022-01-02"))
 
     # # run again, nothing should be inserted into the output table
     run()
@@ -915,7 +925,7 @@ def db_to_db_append(
         assert (2, "val2", 1641081600000) in res
     else:
         assert res[0] == (1, "val1", as_datetime("2022-01-01"))
-        assert res[1] == (2, "val2", as_datetime("2022-02-01"))
+        assert res[1] == (2, "val2", as_datetime("2022-01-02"))
 
 
 def db_to_db_merge_with_primary_key(
@@ -1528,8 +1538,6 @@ def test_kafka_to_db(dest):
         dest_uri = dest_future.result()
         kafka = source_future.result()
 
-    dest_uri_read = get_uri_read(dest)
-
     # kafka = KafkaContainer("confluentinc/cp-kafka:7.6.0").start(timeout=60)
 
     # Create Kafka producer
@@ -1553,6 +1561,7 @@ def test_kafka_to_db(dest):
         assert res.exit_code == 0
 
     def get_output_table():
+        dest_uri_read = get_uri_read(dest_uri, dest)
         dest_engine = sqlalchemy.create_engine(dest_uri_read)
         # CrateDB needs an explicit flush to make data available for reads immediately.
         if dest_engine.dialect.name == "crate":
@@ -1620,6 +1629,12 @@ def test_kafka_to_db(dest):
     "dest", list(DESTINATIONS.values()), ids=list(DESTINATIONS.keys())
 )
 def test_arrow_mmap_to_db_create_replace(dest):
+    if isinstance(dest, CrateDbDockerImage):
+        pytest.skip(
+            "CrateDB type mapping does not support `DATE` yet, "
+            "see https://github.com/crate-workbench/ingestr/issues/4"
+        )
+
     schema = f"testschema_arrow_mmap_create_replace_{get_random_string(5)}"
 
     def run_command(
@@ -1648,12 +1663,6 @@ def test_arrow_mmap_to_db_create_replace(dest):
             return res
 
     dest_uri = dest.start()
-    if dest_uri.startswith("cratedb://"):
-        pytest.skip(
-            "CrateDB is not supported for this test, "
-            "see https://github.com/crate-workbench/ingestr/issues/4"
-        )
-    dest_uri_read = get_uri_read(dest)
 
     # let's start with a basic dataframe
     row_count = 1000
@@ -1670,6 +1679,7 @@ def test_arrow_mmap_to_db_create_replace(dest):
     table = pa.Table.from_pandas(df)
     run_command(table)
 
+    dest_uri_read = get_uri_read(dest_uri, dest)
     dest_engine = sqlalchemy.create_engine(dest_uri_read)
     with dest_engine.begin() as conn:
         res = conn.execute(f"select count(*) from {schema}.output").fetchall()
@@ -1737,11 +1747,12 @@ def test_arrow_mmap_to_db_delete_insert(dest):
         pytest.skip("clickhouse is not supported for this test")
     if dest_uri.startswith("cratedb://"):
         pytest.skip(
-            "CrateDB is not supported for this test, "
+            "CrateDB type mapping does not support `DATE` yet, "
             "see https://github.com/crate-workbench/ingestr/issues/4"
         )
 
-    dest_engine = sqlalchemy.create_engine(dest_uri)
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    dest_engine = sqlalchemy.create_engine(dest_uri_read)
 
     # let's start with a basic dataframe
     row_count = 1000
@@ -1844,6 +1855,11 @@ def test_arrow_mmap_to_db_delete_insert(dest):
     "dest", list(DESTINATIONS.values()), ids=list(DESTINATIONS.keys())
 )
 def test_arrow_mmap_to_db_merge_without_incremental(dest):
+    if isinstance(dest, CrateDbDockerImage):
+        pytest.skip(
+            "CrateDB type mapping does not support `DATE` yet, "
+            "see https://github.com/crate-workbench/ingestr/issues/4"
+        )
     schema = f"testschema_arrow_mmap_{get_random_string(5)}"
 
     def run_command(df: pd.DataFrame):
@@ -1866,13 +1882,8 @@ def test_arrow_mmap_to_db_merge_without_incremental(dest):
             return res
 
     dest_uri = dest.start()
-    if dest_uri.startswith("cratedb://"):
-        pytest.skip(
-            "CrateDB is not supported for this test, "
-            "see https://github.com/crate-workbench/ingestr/issues/4"
-        )
 
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     dest_engine = sqlalchemy.create_engine(dest_uri_read)
 
     # let's start with a basic dataframe
@@ -1956,6 +1967,13 @@ def test_arrow_mmap_to_db_merge_without_incremental(dest):
 )
 @pytest.mark.parametrize("source", list(SOURCES.values()), ids=list(SOURCES.keys()))
 def test_db_to_db_exclude_columns(source, dest):
+    if isinstance(source.container, SqlServerContainer) and isinstance(
+        dest, CrateDbDockerImage
+    ):
+        pytest.skip(
+            "CrateDB type mapping does not support `DATE` yet, "
+            "see https://github.com/crate-workbench/ingestr/issues/4"
+        )
     with ThreadPoolExecutor() as executor:
         source_future = executor.submit(source.start)
         dest_future = executor.submit(dest.start)
@@ -1997,7 +2015,7 @@ def test_db_to_db_exclude_columns(source, dest):
 
     assert result.exit_code == 0
 
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     dest_engine = sqlalchemy.create_engine(dest_uri_read)
     # CrateDB needs an explicit flush to make data available for reads immediately.
     if dest_engine.dialect.name == "crate":
@@ -2278,9 +2296,8 @@ def dynamodb_tests() -> Iterable[Callable]:
         assert_success(result)
 
         # CrateDB needs an explicit flush to make data available for reads immediately.
-        dest_engine = sqlalchemy.create_engine(dest_uri_read, poolclass=NullPool)
-        if dest_engine.dialect.name == "crate":
-            dest_engine.execute(f"REFRESH TABLE {dest_table}")
+        if dest_uri.startswith("cratedb://"):
+            get_query_result(dest_uri_read, f"REFRESH TABLE {dest_table}")
 
         result = get_query_result(
             dest_uri_read, f"select id, updated_at from {dest_table} ORDER BY id"
@@ -2297,7 +2314,7 @@ def dynamodb_tests() -> Iterable[Callable]:
     def append_test(dest_uri, dest_uri_read, dynamodb):
         if dest_uri.startswith("cratedb://"):
             pytest.skip(
-                "CrateDB currently fails when selecting the 'append' strategy, "
+                "CrateDB support for 'append' strategy pending, "
                 "see https://github.com/crate-workbench/ingestr/issues/6"
             )
 
@@ -2317,9 +2334,8 @@ def dynamodb_tests() -> Iterable[Callable]:
             assert_success(result)
 
             # CrateDB needs an explicit flush to make data available for reads immediately.
-            dest_engine = sqlalchemy.create_engine(dest_uri_read, poolclass=NullPool)
-            if dest_engine.dialect.name == "crate":
-                dest_engine.execute(f"REFRESH TABLE {dest_table}")
+            if dest_uri.startswith("cratedb://"):
+                get_query_result(dest_uri_read, f"REFRESH TABLE {dest_table}")
 
             result = get_query_result(
                 dest_uri_read, f"select id, updated_at from {dest_table} ORDER BY id"
@@ -2337,7 +2353,7 @@ def dynamodb_tests() -> Iterable[Callable]:
         def incremental_test(dest_uri, dest_uri_read, dynamodb):
             if dest_uri.startswith("cratedb://") and strategy != "replace":
                 pytest.skip(
-                    "CrateDB currently fails when selecting the 'merge' strategy, "
+                    "CrateDB support for 'merge' strategy pending, "
                     "see https://github.com/crate/dlt-cratedb/issues/14"
                 )
             dest_table = f"public.dynamodb_{get_random_string(5)}"
@@ -2355,9 +2371,8 @@ def dynamodb_tests() -> Iterable[Callable]:
             assert_success(result)
 
             # CrateDB needs an explicit flush to make data available for reads immediately.
-            dest_engine = sqlalchemy.create_engine(dest_uri_read, poolclass=NullPool)
-            if dest_engine.dialect.name == "crate":
-                dest_engine.execute(f"REFRESH TABLE {dest_table}")
+            if dest_uri.startswith("cratedb://"):
+                get_query_result(dest_uri_read, f"REFRESH TABLE {dest_table}")
 
             rows = get_query_result(
                 dest_uri_read, f"select id, updated_at from {dest_table} ORDER BY id"
@@ -2435,8 +2450,9 @@ def dynamodb_tests() -> Iterable[Callable]:
 )
 @pytest.mark.parametrize("testcase", dynamodb_tests())
 def test_dynamodb(dest, dynamodb, testcase):
-    dest_uri_read = get_uri_read(dest)
-    testcase(dest.start(), dest_uri_read, dynamodb)
+    dest_uri = dest.start()
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    testcase(dest_uri, dest_uri_read, dynamodb)
     dest.stop()
 
 
@@ -2454,6 +2470,14 @@ def custom_query_tests():
         dest_connection_url,
         dest_connection_url_read: str,
     ):
+        if source_connection_url.startswith(
+            "mssql://"
+        ) and dest_connection_url.startswith("cratedb://"):
+            pytest.skip(
+                "CrateDB type mapping does not support `DATE` yet, "
+                "see https://github.com/crate-workbench/ingestr/issues/4"
+            )
+
         # CrateDB: Compensate for "Type `date` does not support storage".
         updated_at_type = "DATE"
         if dest_connection_url.startswith("cratedb://"):
@@ -2498,14 +2522,11 @@ def custom_query_tests():
         assert result.exit_code == 0
 
         # CrateDB needs an explicit flush to make data available for reads immediately.
-        dest_engine = sqlalchemy.create_engine(
-            dest_connection_url_read, poolclass=NullPool
-        )
-        if dest_engine.dialect.name == "crate":
-            dest_engine.execute(f"REFRESH TABLE {schema}.output")
+        if dest_connection_url.startswith("cratedb://"):
+            get_query_result(dest_connection_url_read, f"REFRESH TABLE {schema}.output")
 
         res = get_query_result(
-            dest_connection_url_read or dest_connection_url,
+            dest_connection_url_read,
             f"select id, order_id, subname, updated_at from {schema}.output order by id asc",
         )
 
@@ -2533,7 +2554,7 @@ def custom_query_tests():
     ):
         if dest_connection_url.startswith("cratedb://"):
             pytest.skip(
-                "CrateDB currently fails when selecting the 'merge' strategy, "
+                "CrateDB support for 'merge' strategy pending, "
                 "see https://github.com/crate/dlt-cratedb/issues/14"
             )
 
@@ -2583,14 +2604,11 @@ def custom_query_tests():
         run()
 
         # CrateDB needs an explicit flush to make data available for reads immediately.
-        dest_engine = sqlalchemy.create_engine(
-            dest_connection_url_read, poolclass=NullPool
-        )
-        if dest_engine.dialect.name == "crate":
-            dest_engine.execute(f"REFRESH TABLE {schema}.output")
+        if dest_connection_url.startswith("cratedb://"):
+            get_query_result(dest_connection_url_read, f"REFRESH TABLE {schema}.output")
 
         res = get_query_result(
-            dest_connection_url,
+            dest_connection_url_read,
             f"select id, order_id, subname, updated_at, _dlt_load_id from {schema}.output order by id asc",
         )
 
@@ -2628,10 +2646,13 @@ def custom_query_tests():
 
         # Run again - should get same load_id since no changes
         run()
-        if dest_engine.dialect.name == "crate":
-            dest_engine.execute(f"REFRESH TABLE {schema}.output")
+
+        # CrateDB needs an explicit flush to make data available for reads immediately.
+        if dest_connection_url.startswith("cratedb://"):
+            get_query_result(dest_connection_url_read, f"REFRESH TABLE {schema}.output")
+
         res = get_query_result(
-            dest_connection_url,
+            dest_connection_url_read,
             f"select id, order_id, subname, updated_at, _dlt_load_id from {schema}.output order by id asc",
         )
         assert len(res) == 4
@@ -2648,10 +2669,13 @@ def custom_query_tests():
 
         # Run again - should see updated data with new load_id
         run()
-        if dest_engine.dialect.name == "crate":
-            dest_engine.execute(f"REFRESH TABLE {schema}.output")
+
+        # CrateDB needs an explicit flush to make data available for reads immediately.
+        if dest_connection_url.startswith("cratedb://"):
+            get_query_result(dest_connection_url_read, f"REFRESH TABLE {schema}.output")
+
         res = get_query_result(
-            dest_connection_url,
+            dest_connection_url_read,
             f"select id, order_id, subname, updated_at, _dlt_load_id from {schema}.output order by id asc",
         )
 
@@ -2702,7 +2726,7 @@ def test_custom_query(testcase, source, dest):
         dest_future = executor.submit(dest.start)
         source_uri = source_future.result()
         dest_uri = dest_future.result()
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     testcase(source_uri, dest_uri, dest_uri_read)
     source.stop()
     dest.stop()
@@ -2714,7 +2738,7 @@ def test_custom_query(testcase, source, dest):
 )
 def test_github_to_duckdb(dest):
     dest_uri = dest.start()
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     source_uri = "github://?owner=bruin-data&repo=ingestr"
     source_table = "repo_events"
 
@@ -2918,10 +2942,11 @@ def appstore_test_cases() -> Iterable[Callable]:
         When there are report instances for the given date range, the data should be ingested
         """
 
-        pytest.skip(
-            "CrateDB is not supported for this test, "
-            "see https://github.com/crate-workbench/ingestr/issues/4"
-        )
+        if dest_uri.startswith("cratedb://"):
+            pytest.skip(
+                "CrateDB type mapping does not support `DATE` yet, "
+                "see https://github.com/crate-workbench/ingestr/issues/4"
+            )
 
         client = MagicMock()
         client.list_analytics_report_requests = MagicMock(
@@ -3022,10 +3047,11 @@ def appstore_test_cases() -> Iterable[Callable]:
         should load data from the last processing date, given that last_date is not provided
         """
 
-        pytest.skip(
-            "CrateDB is not supported for this test, "
-            "see https://github.com/crate-workbench/ingestr/issues/4"
-        )
+        if dest_uri.startswith("cratedb://"):
+            pytest.skip(
+                "CrateDB type mapping does not support `DATE` yet, "
+                "see https://github.com/crate-workbench/ingestr/issues/4"
+            )
 
         client = MagicMock()
         client.list_analytics_report_requests = MagicMock(
@@ -3177,8 +3203,9 @@ def appstore_test_cases() -> Iterable[Callable]:
 )
 @pytest.mark.parametrize("test_case", appstore_test_cases())
 def test_appstore(dest, test_case):
-    dest_uri_read = get_uri_read(dest)
-    test_case(dest.start(), dest_uri_read)
+    dest_uri = dest.start()
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    test_case(dest_uri, dest_uri_read)
     dest.stop()
 
 
@@ -3512,8 +3539,9 @@ def fs_test_cases(
     ),
 )
 def test_gcs(dest, test_case):
-    dest_uri_read = get_uri_read(dest)
-    test_case(dest.start(), dest_uri_read)
+    dest_uri = dest.start()
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    test_case(dest_uri, dest_uri_read)
     dest.stop()
 
 
@@ -3529,8 +3557,9 @@ def test_gcs(dest, test_case):
     ),
 )
 def test_s3(dest, test_case):
-    dest_uri_read = get_uri_read(dest)
-    test_case(dest.start(), dest_uri_read)
+    dest_uri = dest.start()
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    test_case(dest_uri, dest_uri_read)
     dest.stop()
 
 
@@ -3599,7 +3628,7 @@ def frankfurter_test_cases() -> Iterable[Callable]:
     def interval_start_can_equal_interval_end(dest_uri, dest_uri_read):
         if dest_uri.startswith("cratedb://"):
             pytest.skip(
-                "CrateDB currently fails when selecting the 'merge' strategy, "
+                "CrateDB support for 'merge' strategy pending, "
                 "see https://github.com/crate/dlt-cratedb/issues/14"
             )
         schema = f"testschema_frankfurter_{get_random_string(5)}"
@@ -3649,7 +3678,7 @@ def frankfurter_test_cases() -> Iterable[Callable]:
     def exchange_rate_on_specific_date(dest_uri, dest_uri_read):
         if dest_uri.startswith("cratedb://"):
             pytest.skip(
-                "CrateDB currently fails when selecting the 'merge' strategy, "
+                "CrateDB support for 'merge' strategy pending, "
                 "see https://github.com/crate/dlt-cratedb/issues/14"
             )
         schema = f"testschema_frankfurter_{get_random_string(5)}"
@@ -3696,8 +3725,9 @@ def frankfurter_test_cases() -> Iterable[Callable]:
 )
 @pytest.mark.parametrize("test_case", frankfurter_test_cases())
 def test_frankfurter(dest, test_case):
-    dest_uri_read = get_uri_read(dest)
-    test_case(dest.start(), dest_uri_read)
+    dest_uri = dest.start()
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    test_case(dest_uri, dest_uri_read)
     dest.stop()
 
 
@@ -3767,7 +3797,7 @@ def test_mysql_zero_dates(source, dest):
 
     assert result.exit_code == 0
 
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
     dest_engine = sqlalchemy.create_engine(dest_uri_read)
     # CrateDB needs an explicit flush to make data available for reads immediately.
     if dest_engine.dialect.name == "crate":
@@ -3977,8 +4007,9 @@ def appsflyer_test_cases():
     "dest", list(DESTINATIONS.values()), ids=list(DESTINATIONS.keys())
 )
 def test_appsflyer_source(testcase, dest):
-    dest_uri_read = get_uri_read(dest)
-    testcase(dest.start(), dest_uri_read)
+    dest_uri = dest.start()
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    testcase(dest_uri, dest_uri_read)
     dest.stop()
 
 
@@ -4023,8 +4054,9 @@ def airtable_test_cases():
     "dest", list(DESTINATIONS.values()), ids=list(DESTINATIONS.keys())
 )
 def test_airtable_source(testcase, dest):
-    dest_uri_read = get_uri_read(dest)
-    testcase(dest.start(), dest_uri_read)
+    dest_uri = dest.start()
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    testcase(dest_uri, dest_uri_read)
     dest.stop()
 
 
@@ -4038,7 +4070,7 @@ def pp(x):
     "dest", list(DESTINATIONS.values()), ids=list(DESTINATIONS.keys())
 )
 def test_mongodb_source(dest):
-    if dest.container.get_connection_url().startswith("crate://"):
+    if isinstance(dest, CrateDbDockerImage):
         pytest.skip(
             "CrateDB is not supported for this test, "
             "see https://github.com/crate-workbench/ingestr/issues/5"
@@ -4110,7 +4142,7 @@ def test_mongodb_source(dest):
     )
 
     dest_uri = dest.start()
-    dest_uri_read = get_uri_read(dest)
+    dest_uri_read = get_uri_read(dest_uri, dest)
 
     try:
         invoke_ingest_command(
@@ -4294,7 +4326,7 @@ def test_stripe_source_incremental(stripe_table):
 def trustpilot_test_case(dest_uri, dest_uri_read):
     if dest_uri.startswith("cratedb://"):
         pytest.skip(
-            "CrateDB currently fails when selecting the 'merge' strategy, "
+            "CrateDB support for 'merge' strategy pending, "
             "see https://github.com/crate/dlt-cratedb/issues/14"
         )
 
@@ -4419,17 +4451,13 @@ def trustpilot_test_case(dest_uri, dest_uri_read):
     "dest", list(DESTINATIONS.values()), ids=list(DESTINATIONS.keys())
 )
 def test_trustpilot(dest):
-    dest_uri_read = get_uri_read(dest)
-    trustpilot_test_case(dest.start(), dest_uri_read)
+    dest_uri = dest.start()
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    trustpilot_test_case(dest_uri, dest_uri_read)
     dest.stop()
 
 
 def pinterest_test_case(dest_uri, dest_uri_read):
-    if dest_uri.startswith("cratedb://"):
-        pytest.skip(
-            "CrateDB currently fails when selecting the 'merge' strategy, "
-            "see https://github.com/crate/dlt-cratedb/issues/14"
-        )
     sample_response = {
         "items": [
             {
@@ -4529,6 +4557,12 @@ def pinterest_test_case(dest_uri, dest_uri_read):
     "dest", list(DESTINATIONS.values()), ids=list(DESTINATIONS.keys())
 )
 def test_pinterest_test_case(dest):
-    dest_uri_read = get_uri_read(dest)
-    pinterest_test_case(dest.start(), dest_uri_read)
+    if isinstance(dest, CrateDbDockerImage):
+        pytest.skip(
+            "CrateDB support for 'merge' strategy pending, "
+            "see https://github.com/crate/dlt-cratedb/issues/14"
+        )
+    dest_uri = dest.start()
+    dest_uri_read = get_uri_read(dest_uri, dest)
+    pinterest_test_case(dest_uri, dest_uri_read)
     dest.stop()

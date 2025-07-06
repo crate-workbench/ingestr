@@ -620,6 +620,7 @@ DESTINATIONS = {
     "postgres": pgDocker,
     "duckdb": EphemeralDuckDb(),
     "clickhouse+native": clickHouseDocker,
+    "cratedb": crateDbDocker,
 }
 
 
